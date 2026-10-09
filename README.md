@@ -2,113 +2,88 @@
 
 # CommitGen
 
-**CommitGen** is an AI-powered Git commit message generator that follows the **Conventional Commits** specification. It uses Google's Gemini model to suggest concise, professional commit messages and descriptions.
+CommitGen is a self-contained Go CLI that examines staged Git changes and uses
+Google Gemini to suggest a Conventional Commit title and optional description.
 
----
+## Features
 
-##  Features
-- Generates **Conventional Commit** titles (feat, fix, chore, etc.).
-- Provides detailed bullet-point descriptions of changes.
-- Interactive flow with options to **accept, regenerate, edit, or skip**.
-- Integrates seamlessly with your Git workflow.
+- Generates Conventional Commit titles (`feat`, `fix`, `chore`, and others).
+- Creates optional bullet-point descriptions.
+- Supports accepting, regenerating, or editing generated text.
+- Installs as one native executable with no runtime dependencies.
 
----
+## Requirements
 
-##  Requirements
-- Python **3.11+**
-- [GitPython](https://pypi.org/project/GitPython/)
-- [google-genai](https://pypi.org/project/google-genai/)
-- [google-generativeai](https://pypi.org/project/google-generativeai/) (legacy fallback)
-- A valid **Gemini API key** from Google AI Studio.
+- Git
+- Go 1.22 or newer, or Docker (only needed to build from source)
+- A Gemini API key
 
----
+## Install from source
 
-##  Installation
-Clone the repository and install with pip:
-
-```bash
+```sh
 git clone https://github.com/N0ViP/commitgen-project.git
 cd commitgen-project
-pip install -e .
+./install.sh
 ```
 
-This will install `commitgen` as a CLI command.
+The installer builds `commitgen` into `$GOBIN`, or `~/.local/bin` when `GOBIN`
+is unset. If Go is unavailable, it automatically builds with the official Go
+Docker image. Make sure the installation directory is included in your `PATH`.
 
----
+You can also build without installing:
 
-##  Setting up your API Key
-CommitGen requires a Gemini API key. You can obtain one from [Google AI Studio](https://ai.google.dev/).
+```sh
+go build -o commitgen ./cmd/commitgen
+```
 
-Export it as an environment variable:
+## Configuration
 
-```bash
+Create a Gemini API key in [Google AI Studio](https://ai.google.dev/) and expose
+it to CommitGen:
+
+```sh
 export GEMINI_API_KEY="your_api_key_here"
 ```
 
-Optionally, you can set the model:
+The model can be overridden when necessary:
 
-```bash
-export COMMITGEN_MODEL="gemini-3.8-flash"   # default, recommended
+```sh
+export COMMITGEN_MODEL="gemini-3.8-flash"
 ```
 
-> **💡** If you notice **no response or empty output from the AI**, try switching the model to:
-> - `gemini-3.8-flash` (default)
-> - `gemini-3.8-pro`
+To keep these values between sessions, add the exports to your shell profile,
+such as `~/.bashrc` or `~/.zshrc`.
 
- If you **don’t like the results**, you can change the **prompt templates** used for commit titles and descriptions at any time. The prompts are defined in `ai_helpers.py`, and you can adjust their wording or style to better fit your workflow.
+## Usage
 
-For permanent setup, add the exports to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.).
+Stage changes and start CommitGen from anywhere inside the repository:
 
----
-
-##  Usage
-1. Stage your changes as usual:
-   ```bash
-   git add .
-   ```
-2. Run CommitGen:
-   ```bash
-   commitgen
-   ```
-3. Follow the interactive prompts:
-   - Accept / regenerate / edit the suggested commit title.
-   - Optionally provide or skip a description.
-   - Confirm and commit.
-
----
-
-##  Potential Issues
-- **No staged changes** → CommitGen will exit with an error until you run `git add`.
-- **Missing API key** → Ensure `GEMINI_API_KEY` is exported in your environment.
-- **Model errors or empty output** → Try changing the model as explained above.
-- **Windows editor issues** → By default, CommitGen uses `notepad` on Windows and `nano` on Unix. Set `$EDITOR` to override.
-
----
-
-##  Uninstalling
-To remove CommitGen:
-
-```bash
-pip uninstall commitgen
+```sh
+git add .
+commitgen
 ```
 
-And if you cloned the repository, you can safely delete the project folder:
+Follow the prompts to accept, regenerate, edit, or skip generated content. The
+default editor is `nano` on Unix-like systems and `notepad` on Windows. Set
+`EDITOR` to override it.
 
-```bash
-rm -rf commitgen
+CommitGen sends the staged diff to the Gemini API. Do not stage secrets or other
+sensitive information you do not want sent to Google.
+
+## Development
+
+```sh
+go test ./...
+go vet ./...
 ```
 
-Remove the environment variables from your shell profile if you no longer need them.
+## Uninstall
 
----
+Remove the installed executable:
 
-##  FAQ
-**Q: Can I still write my own commit messages?**  
-Yes! CommitGen only helps when you run it. You can always use `git commit` directly.
+```sh
+rm ~/.local/bin/commitgen
+```
 
-**Q: Does it support multiple files and big diffs?**  
-Yes, but generation time depends on the size of the diff and the chosen Gemini model.
-
-**Q: Is my code sent to Google?**  
-Yes, staged diffs are sent to the Gemini API to generate commit messages. Avoid staging sensitive information if this is a concern.
-
+If you set `GOBIN` during installation, remove `commitgen` from that directory
+instead.
