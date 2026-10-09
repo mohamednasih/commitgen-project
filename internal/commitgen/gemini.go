@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,10 +16,13 @@ import (
 const geminiBaseURL = "https://generativelanguage.googleapis.com/v1beta"
 
 type GeminiClient struct {
-	APIKey  string
-	Model   string
-	BaseURL string
-	HTTP    *http.Client
+	APIKey     string
+	Model      string
+	BaseURL    string
+	HTTP       *http.Client
+	MaxRetries int
+	RetryDelay time.Duration
+	OnRetry    func(failedAttempt, totalAttempts int, err error, nextDelay time.Duration)
 }
 
 type generateRequest struct {
@@ -41,10 +45,12 @@ type part struct {
 
 func NewGeminiClient(apiKey, model string) *GeminiClient {
 	return &GeminiClient{
-		APIKey:  apiKey,
-		Model:   model,
-		BaseURL: geminiBaseURL,
-		HTTP:    &http.Client{Timeout: 60 * time.Second},
+		APIKey:     apiKey,
+		Model:      model,
+		BaseURL:    geminiBaseURL,
+		HTTP:       &http.Client{Timeout: 60 * time.Second},
+		MaxRetries: 3,
+		RetryDelay: time.Second,
 	}
 }
 
@@ -57,29 +63,61 @@ func (c *GeminiClient) Generate(ctx context.Context, prompt string) (string, err
 		return "", fmt.Errorf("encode request: %w", err)
 	}
 	endpoint := strings.TrimRight(c.BaseURL, "/") + "/models/" + url.PathEscape(c.Model) + ":generateContent"
+	totalAttempts := c.MaxRetries + 1
+	for attempt := 1; attempt <= totalAttempts; attempt++ {
+		result, retryable, err := c.generateOnce(ctx, endpoint, body)
+		if err == nil {
+			return result, nil
+		}
+		if !retryable || attempt == totalAttempts {
+			return "", err
+		}
+
+		delay := c.RetryDelay * time.Duration(1<<(attempt-1))
+		if c.OnRetry != nil {
+			c.OnRetry(attempt, totalAttempts, err, delay)
+		}
+		if delay > 0 {
+			timer := time.NewTimer(delay)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return "", ctx.Err()
+			case <-timer.C:
+			}
+		}
+	}
+	return "", errors.New("Gemini request failed")
+}
+
+func (c *GeminiClient) generateOnce(ctx context.Context, endpoint string, body []byte) (string, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return "", fmt.Errorf("create request: %w", err)
+		return "", false, fmt.Errorf("create request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("x-goog-api-key", c.APIKey)
 
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return "", fmt.Errorf("call Gemini: %w", err)
+		return "", ctx.Err() == nil, fmt.Errorf("call Gemini: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
-		return "", fmt.Errorf("Gemini returned %s: %s", resp.Status, strings.TrimSpace(string(message)))
+		retryable := resp.StatusCode == http.StatusRequestTimeout ||
+			resp.StatusCode == http.StatusTooEarly ||
+			resp.StatusCode == http.StatusTooManyRequests ||
+			resp.StatusCode >= http.StatusInternalServerError
+		return "", retryable, fmt.Errorf("Gemini returned %s: %s", resp.Status, strings.TrimSpace(string(message)))
 	}
 
 	var result generateResponse
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", fmt.Errorf("decode Gemini response: %w", err)
+		return "", false, fmt.Errorf("decode Gemini response: %w", err)
 	}
 	if len(result.Candidates) == 0 {
-		return "", nil
+		return "", false, nil
 	}
 	var text []string
 	for _, part := range result.Candidates[0].Content.Parts {
@@ -87,5 +125,5 @@ func (c *GeminiClient) Generate(ctx context.Context, prompt string) (string, err
 			text = append(text, part.Text)
 		}
 	}
-	return strings.TrimSpace(strings.Join(text, "")), nil
+	return strings.TrimSpace(strings.Join(text, "")), false, nil
 }

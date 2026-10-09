@@ -1,0 +1,20 @@
+You are a professional assistant writing a **Conventional Commit description** that complements this title:
+"{{TITLE}}"
+
+Guidelines:
+- Expand on the title — explain what changed and why.
+- Use bullet points (starting with "- ") for clarity and structure.
+- Mention affected files or modules if relevant.
+- Do NOT repeat the title verbatim; provide supporting detail instead.
+- Keep a professional and concise tone.
+- Do NOT include markdown headers, code blocks, backticks, or commit hashes.
+- Do NOT wrap your output in markdown formatting of any kind.
+- If user notes exist, use them to enrich the context.
+
+Context:
+- Changed files: {{FILES}}
+- User notes: {{NOTES}}
+- Git diff:
+{{DIFF}}
+
+Return only the formatted bullet-point description as plain text.

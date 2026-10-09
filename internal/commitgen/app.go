@@ -8,35 +8,36 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
-const bannerWidth = 60
+const outputWidth = 60
 
 var errInputClosed = errors.New("input closed")
 
 type App struct {
-	in     io.Reader
-	out    io.Writer
-	errOut io.Writer
-	input  *bufio.Reader
-	ai     *GeminiClient
+	out   io.Writer
+	input *bufio.Reader
+	ai    *GeminiClient
 }
 
 func New(in io.Reader, out, errOut io.Writer) *App {
+	client := NewGeminiClient(
+		os.Getenv("GEMINI_API_KEY"),
+		envOrDefault("COMMITGEN_MODEL", "gemini-3.1-flash-lite"),
+	)
+	client.OnRetry = func(failedAttempt, totalAttempts int, err error, nextDelay time.Duration) {
+		fmt.Fprintf(errOut, "\n[commitgen] AI request failed (attempt %d/%d): %v\n", failedAttempt, totalAttempts, err)
+		fmt.Fprintf(errOut, "[commitgen] Retrying in %s (%d retries remaining)...\n", nextDelay, totalAttempts-failedAttempt)
+	}
 	return &App{
-		in:     in,
-		out:    out,
-		errOut: errOut,
-		input:  bufio.NewReader(in),
-		ai: NewGeminiClient(
-			os.Getenv("GEMINI_API_KEY"),
-			envOrDefault("COMMITGEN_MODEL", "gemini-3.8-flash"),
-		),
+		out:   out,
+		input: bufio.NewReader(in),
+		ai:    client,
 	}
 }
 
-func (a *App) Run(ctx context.Context) error {
-	PrintHeader(a.out)
+func (a *App) Run(ctx context.Context, interactive bool) error {
 	if a.ai.APIKey == "" {
 		return errors.New("Gemini API key not found; set GEMINI_API_KEY")
 	}
@@ -44,16 +45,25 @@ func (a *App) Run(ctx context.Context) error {
 		return err
 	}
 
-	diff, err := stagedDiff(ctx)
+	files, err := stagedFiles(ctx)
 	if err != nil {
 		return err
 	}
-	files := stagedFiles(ctx)
+	diff, err := stagedDiffContext(ctx, files)
+	if err != nil {
+		return err
+	}
+	if !interactive {
+		return a.runAutomatic(ctx, diff, files)
+	}
 
 	fmt.Fprintln(a.out, "\nGenerating initial commit suggestion, please wait...")
-	title := a.generateTitle(ctx, diff, files)
+	title, err := a.generateTitle(ctx, diff, files)
+	if err != nil {
+		return fmt.Errorf("generate commit title: %w", err)
+	}
 	for {
-		fmt.Fprintf(a.out, "\n--- Proposed Commit Title ---\n\n%s\n\n%s\n\n", title, strings.Repeat("-", bannerWidth))
+		fmt.Fprintf(a.out, "\n--- Proposed Commit Title ---\n\n%s\n\n%s\n\n", title, strings.Repeat("-", outputWidth))
 		choice, askErr := a.ask("Accept (y), Regenerate (n), Edit (e), or Quit (q)? ", "yneq")
 		if askErr != nil {
 			return a.finishOnInputError(askErr)
@@ -62,7 +72,10 @@ func (a *App) Run(ctx context.Context) error {
 		case 'y':
 			goto description
 		case 'n':
-			title = a.generateTitle(ctx, diff, files)
+			title, err = a.generateTitle(ctx, diff, files)
+			if err != nil {
+				return fmt.Errorf("regenerate commit title: %w", err)
+			}
 		case 'e':
 			edited, editErr := openInEditor(title, "# Edit your commit title below. Lines starting with # will be ignored.\n\n")
 			if editErr != nil {
@@ -90,17 +103,19 @@ description:
 	description := ""
 	if wantDescription == 'y' {
 		fmt.Fprintln(a.out, "\n(Optional) Add keywords/notes for the description.")
-		fmt.Fprintln(a.out, "Press Ctrl+D (Unix/Mac) or Ctrl+Z then Enter (Windows) to finish.")
-		notesBytes, readErr := io.ReadAll(a.input)
+		fmt.Fprintln(a.out, "Type EOF on its own line to finish.")
+		notes, readErr := a.readNotes()
 		if readErr != nil {
 			return fmt.Errorf("read description notes: %w", readErr)
 		}
-		notes := strings.TrimSpace(string(notesBytes))
 		fmt.Fprintln(a.out, "\nNotes captured. Please wait...")
 
 		for {
-			description = a.generateDescription(ctx, diff, files, notes, title)
-			fmt.Fprintf(a.out, "\n--- Proposed Description ---\n\n%s\n\n%s\n\n", description, strings.Repeat("-", bannerWidth))
+			description, err = a.generateDescription(ctx, diff, files, notes, title)
+			if err != nil {
+				return fmt.Errorf("generate commit description: %w", err)
+			}
+			fmt.Fprintf(a.out, "\n--- Proposed Description ---\n\n%s\n\n%s\n\n", description, strings.Repeat("-", outputWidth))
 			choice, askErr := a.ask("Accept (y), Regenerate (n), Edit (e), or Skip (s)? ", "ynes")
 			if askErr != nil {
 				return a.finishOnInputError(askErr)
@@ -120,7 +135,7 @@ description:
 					fmt.Fprintln(a.out, "Empty description. Skipping.")
 					goto commit
 				}
-				fmt.Fprintf(a.out, "\n--- Edited Description ---\n\n%s\n\n%s\n\n", description, strings.Repeat("-", bannerWidth))
+				fmt.Fprintf(a.out, "\n--- Edited Description ---\n\n%s\n\n%s\n\n", description, strings.Repeat("-", outputWidth))
 				secondChoice, secondErr := a.ask("Accept (y), Edit again (e), or Skip (s)? ", "yes")
 				if secondErr != nil {
 					return a.finishOnInputError(secondErr)
@@ -144,8 +159,45 @@ commit:
 		return err
 	}
 	fmt.Fprintln(a.out, "\nCommit successful!")
-	PrintFooter(a.out)
 	return nil
+}
+
+func (a *App) runAutomatic(ctx context.Context, diff string, files []string) error {
+	fmt.Fprintln(a.out, "\nGenerating commit title and description, please wait...")
+	title, err := a.generateTitle(ctx, diff, files)
+	if err != nil {
+		return fmt.Errorf("generate commit title: %w", err)
+	}
+	description, err := a.generateDescription(ctx, diff, files, "", title)
+	if err != nil {
+		return fmt.Errorf("generate commit description: %w", err)
+	}
+
+	fmt.Fprintf(a.out, "\n--- Generated Commit ---\n\n%s\n\n%s\n\n%s\n", title, description, strings.Repeat("-", outputWidth))
+	if err := gitCommit(ctx, title, description); err != nil {
+		return err
+	}
+	fmt.Fprintln(a.out, "\nCommit successful!")
+	return nil
+}
+
+func (a *App) readNotes() (string, error) {
+	var lines []string
+	for {
+		line, err := a.input.ReadString('\n')
+		if strings.TrimSpace(line) == "EOF" {
+			return strings.TrimSpace(strings.Join(lines, "\n")), nil
+		}
+		if line != "" {
+			lines = append(lines, strings.TrimRight(line, "\r\n"))
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return "", errors.New("input closed before the EOF delimiter")
+			}
+			return "", err
+		}
+	}
 }
 
 func (a *App) ask(prompt, allowed string) (byte, error) {
@@ -166,32 +218,31 @@ func (a *App) ask(prompt, allowed string) (byte, error) {
 	}
 }
 
-func (a *App) generateTitle(ctx context.Context, diff string, files []string) string {
+func (a *App) generateTitle(ctx context.Context, diff string, files []string) (string, error) {
 	result, err := a.ai.Generate(ctx, titlePrompt(diff, files))
 	if err != nil {
-		fmt.Fprintf(a.errOut, "\n[commitgen] AI error: %v\n", err)
+		return "", err
 	}
 	if title := cleanFirstLine(result); title != "" {
-		return title
+		return title, nil
 	}
-	return "chore(core): update changes"
+	return "", errors.New("Gemini returned an empty commit title")
 }
 
-func (a *App) generateDescription(ctx context.Context, diff string, files []string, notes, title string) string {
+func (a *App) generateDescription(ctx context.Context, diff string, files []string, notes, title string) (string, error) {
 	result, err := a.ai.Generate(ctx, descriptionPrompt(diff, files, notes, title))
 	if err != nil {
-		fmt.Fprintf(a.errOut, "\n[commitgen] AI error: %v\n", err)
+		return "", err
 	}
 	result = strings.TrimSpace(strings.SplitN(result, "```", 2)[0])
 	if result == "" {
-		return "- Describe changes (AI unavailable)\n- Provide purpose/impact"
+		return "", errors.New("Gemini returned an empty commit description")
 	}
-	return result
+	return result, nil
 }
 
 func (a *App) cancel(message string) error {
 	fmt.Fprintf(a.out, "\n%s\n", message)
-	PrintFooter(a.out)
 	return nil
 }
 
@@ -200,16 +251,6 @@ func (a *App) finishOnInputError(err error) error {
 		return a.cancel("Input closed. Exiting.")
 	}
 	return err
-}
-
-func PrintHeader(w io.Writer) {
-	bar := strings.Repeat("=", bannerWidth)
-	fmt.Fprintf(w, "\n%s\n     AI-POWERED GIT COMMIT GENERATOR (Conventional Commits)\n%s\n\n", bar, bar)
-}
-
-func PrintFooter(w io.Writer) {
-	bar := strings.Repeat("=", bannerWidth)
-	fmt.Fprintf(w, "\n%s\n                 Commit Process Finished\n%s\n\n", bar, bar)
 }
 
 func envOrDefault(name, fallback string) string {

@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="CommitGen is a self-contained Go CLI that turns staged Git changes into clear Conventional Commits with Gemini.">
+  <meta name="theme-color" content="#101311">
+  <title>CommitGen — Understand the project</title>
+  <style>
+    :root {
+      --ink: #151814;
+      --ink-soft: #4f574f;
+      --paper: #f3f0e7;
+      --paper-deep: #e8e2d4;
+      --line: rgba(21, 24, 20, .18);
+      --lime: #c9ff5b;
+      --lime-dark: #53760c;
+      --orange: #ff7347;
+      --terminal: #101311;
+      --terminal-soft: #1a1f1b;
+      --white: #fffdf7;
+      --radius: 18px;
+      --shadow: 0 22px 70px rgba(28, 31, 24, .13);
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--paper);
+      font-family: var(--sans);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    ::selection { color: var(--ink); background: var(--lime); }
+    a { color: inherit; }
+    button, input { font: inherit; }
+    code, pre { font-family: var(--mono); }
+    section { scroll-margin-top: 90px; }
+
+    .skip-link {
+      position: fixed;
+      top: 8px;
+      left: 8px;
+      z-index: 100;
+      padding: 10px 14px;
+      color: var(--white);
+      background: var(--ink);
+      transform: translateY(-150%);
+    }
+    .skip-link:focus { transform: translateY(0); }
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 68px;
+      padding: 0 clamp(20px, 4vw, 68px);
+      border-bottom: 1px solid var(--line);
+      background: rgba(243, 240, 231, .88);
+      backdrop-filter: blur(18px);
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 850;
+      letter-spacing: -.04em;
+      text-decoration: none;
+    }
+    .brand-mark {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      color: var(--ink);
+      background: var(--lime);
+      font-family: var(--mono);
+      font-size: 13px;
+      box-shadow: inset 0 0 0 1px rgba(21, 24, 20, .16);
+    }
+
+    .nav-links { display: flex; align-items: center; gap: 26px; }
+    .nav-links a {
+      color: var(--ink-soft);
+      font-size: 13px;
+      font-weight: 720;
+      text-decoration: none;
+    }
+    .nav-links a:hover, .nav-links a:focus-visible { color: var(--ink); }
+    .nav-cta {
+      padding: 9px 14px;
+      border: 1px solid var(--ink) !important;
+      border-radius: 10px;
+      color: var(--ink) !important;
+    }
+
+    .hero {
+      position: relative;
+      min-height: 710px;
+      padding: clamp(72px, 10vw, 138px) clamp(20px, 6vw, 92px) 86px;
+      border-bottom: 1px solid var(--line);
+      overflow: hidden;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      opacity: .45;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(21, 24, 20, .07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(21, 24, 20, .07) 1px, transparent 1px);
+      background-size: 56px 56px;
+      mask-image: linear-gradient(to bottom, black, transparent 90%);
+    }
+    .hero-grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: minmax(0, 1.03fr) minmax(420px, .97fr);
+      gap: clamp(46px, 8vw, 118px);
+      align-items: center;
+      max-width: 1380px;
+      margin: 0 auto;
+    }
+    .eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 22px;
+      color: var(--lime-dark);
+      font-family: var(--mono);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .eyebrow::before {
+      content: "";
+      width: 26px;
+      height: 2px;
+      background: currentColor;
+    }
+    h1 {
+      max-width: 800px;
+      margin: 0;
+      font-size: clamp(58px, 7vw, 110px);
+      font-weight: 880;
+      letter-spacing: -.075em;
+      line-height: .88;
+    }
+    .hero-highlight {
+      position: relative;
+      display: inline-block;
+      z-index: 0;
+    }
+    .hero-highlight::after {
+      content: "";
+      position: absolute;
+      left: -1%;
+      right: -5%;
+      bottom: .02em;
+      z-index: -1;
+      height: .27em;
+      background: var(--lime);
+      transform: rotate(-1.6deg);
+    }
+    .hero-copy {
+      max-width: 660px;
+      margin: 30px 0 0;
+      color: var(--ink-soft);
+      font-size: clamp(17px, 2vw, 21px);
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      min-height: 48px;
+      padding: 0 19px;
+      border: 1px solid var(--ink);
+      border-radius: 12px;
+      font-weight: 760;
+      text-decoration: none;
+      transition: transform .18s ease, box-shadow .18s ease;
+    }
+    .button:hover { transform: translateY(-2px); box-shadow: 0 9px 0 rgba(21, 24, 20, .09); }
+    .button-primary { color: var(--white); background: var(--ink); }
+    .button-secondary { background: rgba(255, 255, 255, .35); }
+    .button-arrow { font-family: var(--mono); }
+
+    .terminal-wrap { position: relative; }
+    .terminal-wrap::before {
+      content: "";
+      position: absolute;
+      inset: 7% -6% -7% 12%;
+      z-index: -1;
+      border-radius: 30px;
+      background: var(--orange);
+      transform: rotate(3deg);
+    }
+    .terminal {
+      overflow: hidden;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: var(--radius);
+      color: #dfe7da;
+      background: var(--terminal);
+      box-shadow: 0 34px 90px rgba(14, 17, 14, .28);
+    }
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      height: 46px;
+      padding: 0 16px;
+      border-bottom: 1px solid rgba(255,255,255,.09);
+      background: var(--terminal-soft);
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #ff6b59; }
+    .dot:nth-child(2) { background: #f7c84c; }
+    .dot:nth-child(3) { background: #74d874; }
+    .terminal-title { margin-left: auto; color: #889087; font: 11px var(--mono); }
+    .terminal-body {
+      min-height: 404px;
+      padding: 24px clamp(18px, 3vw, 29px) 30px;
+      font: 13px/1.75 var(--mono);
+      overflow-x: auto;
+    }
+    .terminal-body p { margin: 0 0 12px; white-space: nowrap; }
+    .prompt { color: var(--lime); }
+    .muted { color: #7e887d; }
+    .terminal-rule { color: #485148; }
+    .suggestion { color: #fff7d4; }
+    .terminal-choice { color: #7fdaff; }
+    .cursor {
+      display: inline-block;
+      width: 7px;
+      height: 14px;
+      margin-left: 3px;
+      vertical-align: -2px;
+      background: var(--lime);
+      animation: blink 1.1s steps(2, start) infinite;
+    }
+    @keyframes blink { 50% { opacity: 0; } }
+
+    .stat-strip {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      border-bottom: 1px solid var(--line);
+    }
+    .stat {
+      min-height: 150px;
+      padding: 31px clamp(20px, 4vw, 56px);
+      border-right: 1px solid var(--line);
+    }
+    .stat:last-child { border-right: 0; }
+    .stat strong { display: block; font-size: clamp(28px, 3vw, 43px); letter-spacing: -.05em; }
+    .stat span { color: var(--ink-soft); font-size: 13px; }
+
+    .section-shell { max-width: 1280px; margin: 0 auto; padding: clamp(82px, 10vw, 138px) clamp(20px, 5vw, 64px); }
+    .section-heading {
+      display: grid;
+      grid-template-columns: .68fr 1.32fr;
+      gap: 60px;
+      align-items: start;
+      margin-bottom: 64px;
+    }
+    .section-heading h2 {
+      max-width: 780px;
+      margin: 0;
+      font-size: clamp(38px, 5vw, 70px);
+      line-height: .98;
+      letter-spacing: -.06em;
+    }
+    .section-heading p { max-width: 680px; margin: 8px 0 0; color: var(--ink-soft); font-size: 18px; }
+
+    .workflow { background: var(--white); border-bottom: 1px solid var(--line); }
+    .steps { counter-reset: step; border-top: 1px solid var(--line); }
+    .step {
+      counter-increment: step;
+      display: grid;
+      grid-template-columns: 90px minmax(180px, .65fr) 1.35fr;
+      gap: 28px;
+      padding: 35px 0;
+      border-bottom: 1px solid var(--line);
+      align-items: start;
+    }
+    .step::before {
+      content: "0" counter(step);
+      color: var(--lime-dark);
+      font: 700 13px var(--mono);
+      letter-spacing: .08em;
+    }
+    .step h3 { margin: -7px 0 0; font-size: 25px; letter-spacing: -.035em; }
+    .step p { max-width: 660px; margin: 0; color: var(--ink-soft); }
+    .inline-code {
+      padding: 2px 6px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      color: var(--ink);
+      background: var(--paper);
+      font: .88em var(--mono);
+    }
+
+    .architecture { position: relative; overflow: hidden; }
+    .architecture::after {
+      content: "{}";
+      position: absolute;
+      right: -40px;
+      top: 28px;
+      color: rgba(21,24,20,.035);
+      font: 900 300px/1 var(--mono);
+      letter-spacing: -.2em;
+      pointer-events: none;
+    }
+    .architecture-board {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--ink);
+      border-radius: var(--radius);
+      background: var(--ink);
+      box-shadow: var(--shadow);
+    }
+    .architecture-card {
+      min-height: 270px;
+      padding: 31px;
+      background: var(--paper);
+    }
+    .architecture-card:nth-child(2) { background: var(--lime); }
+    .architecture-card:nth-child(5) { color: var(--white); background: var(--ink); }
+    .architecture-card .tag { color: var(--lime-dark); font: 700 11px var(--mono); text-transform: uppercase; letter-spacing: .1em; }
+    .architecture-card:nth-child(5) .tag { color: var(--lime); }
+    .architecture-card h3 { margin: 58px 0 10px; font-size: 25px; letter-spacing: -.04em; }
+    .architecture-card p { margin: 0; color: var(--ink-soft); font-size: 14px; }
+    .architecture-card:nth-child(2) p { color: #344411; }
+    .architecture-card:nth-child(5) p { color: #abb3aa; }
+
+    .install { color: var(--white); background: var(--terminal); }
+    .install .section-heading p { color: #aeb6ad; }
+    .install .eyebrow { color: var(--lime); }
+    .install-grid { display: grid; grid-template-columns: .78fr 1.22fr; gap: clamp(38px, 8vw, 110px); }
+    .install-options { display: grid; gap: 0; align-content: start; border-top: 1px solid #343b34; }
+    .install-option { padding: 25px 0; border-bottom: 1px solid #343b34; }
+    .install-option strong { display: block; margin-bottom: 5px; font-size: 17px; }
+    .install-option span { color: #9ea89d; font-size: 14px; }
+    .code-stack { display: grid; gap: 16px; }
+    .code-block {
+      position: relative;
+      margin: 0;
+      padding: 24px 68px 24px 24px;
+      border: 1px solid #394139;
+      border-radius: 14px;
+      color: #e5eddf;
+      background: #171b18;
+      font-size: 13px;
+      line-height: 1.8;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .copy-button {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      width: 38px;
+      height: 34px;
+      border: 1px solid #465047;
+      border-radius: 8px;
+      color: #bac3b8;
+      background: transparent;
+      cursor: pointer;
+    }
+    .copy-button:hover, .copy-button:focus-visible { color: var(--ink); background: var(--lime); border-color: var(--lime); }
+    .code-comment { color: #7e887d; }
+    .code-value { color: var(--lime); }
+
+    .details { background: var(--paper-deep); }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; }
+    .detail-panel {
+      padding: clamp(28px, 4vw, 45px);
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 253, 247, .58);
+    }
+    .detail-panel h3 { margin: 0 0 13px; font-size: 27px; letter-spacing: -.04em; }
+    .detail-panel > p { margin: 0 0 24px; color: var(--ink-soft); }
+    .definition-list { margin: 0; }
+    .definition-row {
+      display: grid;
+      grid-template-columns: minmax(120px, .7fr) 1.3fr;
+      gap: 20px;
+      padding: 17px 0;
+      border-top: 1px solid var(--line);
+    }
+    .definition-row dt { font: 700 12px/1.5 var(--mono); overflow-wrap: anywhere; }
+    .definition-row dd { margin: 0; color: var(--ink-soft); font-size: 14px; }
+
+    .privacy {
+      display: grid;
+      grid-template-columns: .9fr 1.1fr;
+      min-height: 540px;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .privacy-copy { padding: clamp(62px, 8vw, 112px) clamp(20px, 6vw, 90px); }
+    .privacy-copy h2 { margin: 0 0 24px; font-size: clamp(40px, 5vw, 70px); line-height: 1; letter-spacing: -.06em; }
+    .privacy-copy p { max-width: 590px; color: var(--ink-soft); font-size: 17px; }
+    .privacy-visual {
+      display: grid;
+      align-content: center;
+      padding: clamp(44px, 7vw, 94px);
+      color: var(--white);
+      background: var(--orange);
+    }
+    .data-flow { display: grid; gap: 14px; }
+    .data-node {
+      display: grid;
+      grid-template-columns: 46px 1fr;
+      gap: 16px;
+      align-items: center;
+      padding: 18px;
+      border: 1px solid rgba(21,24,20,.5);
+      border-radius: 13px;
+      color: var(--ink);
+      background: rgba(255, 253, 247, .85);
+    }
+    .data-node b { font-size: 15px; }
+    .data-node small { display: block; color: #5b514b; }
+    .node-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 50%; background: var(--ink); color: var(--lime); font: 700 12px var(--mono); }
+    .flow-arrow { margin-left: 39px; color: var(--ink); font: 800 16px var(--mono); }
+
+    .files { background: var(--white); }
+    .file-tree {
+      display: grid;
+      grid-template-columns: minmax(280px, .78fr) 1.22fr;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+    .tree-list { margin: 0; padding: 27px; list-style: none; background: var(--terminal); }
+    .tree-list li { padding: 8px 5px; color: #aeb8ad; font: 13px var(--mono); }
+    .tree-list li::before { content: "├─ "; color: #596359; }
+    .tree-list li:first-child::before { content: "●  "; color: var(--lime); }
+    .tree-list .indent { padding-left: 24px; }
+    .tree-list .indent::before { content: "└─ "; }
+    .file-notes { padding: clamp(30px, 5vw, 60px); }
+    .file-notes h3 { margin: 0 0 25px; font-size: 30px; letter-spacing: -.04em; }
+    .file-note { display: grid; grid-template-columns: 150px 1fr; gap: 20px; padding: 16px 0; border-top: 1px solid var(--line); }
+    .file-note code { font-size: 12px; font-weight: 700; }
+    .file-note span { color: var(--ink-soft); font-size: 14px; }
+
+    .faq { border-top: 1px solid var(--line); }
+    details { border-top: 1px solid var(--line); }
+    details:last-child { border-bottom: 1px solid var(--line); }
+    summary {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 24px 0;
+      font-weight: 760;
+      cursor: pointer;
+      list-style: none;
+    }
+    summary::-webkit-details-marker { display: none; }
+    summary::after { content: "+"; font: 400 25px var(--mono); }
+    details[open] summary::after { content: "−"; }
+    details p { max-width: 800px; margin: -6px 0 26px; color: var(--ink-soft); }
+
+    footer {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 30px;
+      align-items: end;
+      padding: 70px clamp(20px, 6vw, 92px) 42px;
+      color: var(--white);
+      background: var(--ink);
+    }
+    .footer-title { margin: 0; font-size: clamp(42px, 7vw, 90px); line-height: .9; letter-spacing: -.07em; }
+    .footer-meta { text-align: right; color: #9ba59a; font-size: 13px; }
+    .footer-meta a { color: var(--lime); text-underline-offset: 4px; }
+
+    .reveal { opacity: 0; transform: translateY(18px); transition: opacity .6s ease, transform .6s ease; }
+    .reveal.visible { opacity: 1; transform: none; }
+
+    @media (max-width: 940px) {
+      .nav-links a:not(.nav-cta) { display: none; }
+      .hero-grid, .section-heading, .install-grid, .privacy, .file-tree { grid-template-columns: 1fr; }
+      .hero { padding-top: 86px; }
+      .hero-grid { gap: 68px; }
+      .terminal-wrap { max-width: 670px; }
+      .section-heading { gap: 22px; }
+      .architecture-board { grid-template-columns: repeat(2, 1fr); }
+      .stat-strip { grid-template-columns: repeat(2, 1fr); }
+      .stat:nth-child(2) { border-right: 0; }
+      .stat:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .privacy-visual { min-height: 520px; }
+    }
+
+    @media (max-width: 650px) {
+      h1 { font-size: clamp(53px, 17vw, 76px); }
+      .hero { padding-left: 20px; padding-right: 20px; }
+      .hero-grid { display: block; }
+      .terminal-wrap { margin-top: 64px; }
+      .terminal-body { font-size: 11px; }
+      .stat-strip, .architecture-board, .detail-grid { grid-template-columns: 1fr; }
+      .stat { border-right: 0; border-bottom: 1px solid var(--line); }
+      .stat:last-child { border-bottom: 0; }
+      .step { grid-template-columns: 48px 1fr; }
+      .step p { grid-column: 2; }
+      .architecture-card { min-height: 220px; }
+      .architecture-card h3 { margin-top: 37px; }
+      .definition-row, .file-note { grid-template-columns: 1fr; gap: 5px; }
+      footer { grid-template-columns: 1fr; }
+      .footer-meta { text-align: left; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+      .reveal { opacity: 1; transform: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="CommitGen home">
+      <span class="brand-mark">CG</span>
+      <span>CommitGen</span>
+    </a>
+    <nav class="nav-links" aria-label="Primary navigation">
+      <a href="#workflow">How it works</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#install">Install</a>
+      <a class="nav-cta" href="https://github.com/N0ViP/commitgen-project">View source ↗</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="top">
+      <div class="hero-grid">
+        <div>
+          <p class="eyebrow">AI-assisted commits, under your control</p>
+          <h1>Stage code.<br><span class="hero-highlight">Say it better.</span></h1>
+          <p class="hero-copy">CommitGen reads the changes you already staged, asks Gemini for a precise title and description, then commits automatically. Add <code>--interactive</code> whenever you want full review control.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#install">Install CommitGen <span class="button-arrow">↓</span></a>
+            <a class="button button-secondary" href="#workflow">Explore the workflow</a>
+          </div>
+        </div>
+
+        <div class="terminal-wrap" aria-label="Example CommitGen terminal session">
+          <div class="terminal">
+            <div class="terminal-bar">
+              <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+              <span class="terminal-title">commitgen — zsh</span>
+            </div>
+            <div class="terminal-body">
+              <p><span class="prompt">~/project $</span> git add internal/commitgen</p>
+              <p><span class="prompt">~/project $</span> commitgen --interactive</p>
+              <p class="muted">Generating initial commit suggestion...</p>
+              <br>
+              <p>--- Proposed Commit Title ---</p>
+              <p class="suggestion">feat(cli): add Docker build fallback</p>
+              <p class="terminal-rule">------------------------------------------------------------</p>
+              <p>Accept (y), Regenerate (n), Edit (e), or Quit (q)? <span class="terminal-choice">y</span></p>
+              <p>Do you want a description? (y/n/q): <span class="terminal-choice">n</span></p>
+              <p class="muted">[main a8df21c] feat(cli): add Docker build fallback</p>
+              <p>Commit successful!<span class="cursor" aria-hidden="true"></span></p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="stat-strip" aria-label="Project highlights">
+      <div class="stat"><strong>1 binary</strong><span>No language runtime on target machines</span></div>
+      <div class="stat"><strong>0 packages</strong><span>Go standard library only</span></div>
+      <div class="stat"><strong>8,000</strong><span>Characters shared fairly across staged files</span></div>
+      <div class="stat"><strong>2 modes</strong><span>Automatic by default, interactive on demand</span></div>
+    </div>
+
+    <section class="workflow" id="workflow">
+      <div class="section-shell">
+        <div class="section-heading reveal">
+          <div><p class="eyebrow">From diff to history</p></div>
+          <div>
+            <h2>A deliberate six-step workflow.</h2>
+            <p>CommitGen uses Git’s staging area as the source of truth, generates both parts of the message, and commits without pausing. Interactive mode adds the full review loop when you need it.</p>
+          </div>
+        </div>
+
+        <div class="steps">
+          <article class="step reveal">
+            <h3>Validate context</h3>
+            <p>The CLI checks for <span class="inline-code">GEMINI_API_KEY</span>, confirms the current directory belongs to a Git worktree, and stops early with a clear error if either requirement is missing.</p>
+          </article>
+          <article class="step reveal">
+            <h3>Read staged work</h3>
+            <p>It runs <span class="inline-code">git diff --cached</span> and <span class="inline-code">git diff --cached --name-only</span>. Unstaged files are intentionally excluded, so the suggestion describes only what the next commit will contain.</p>
+          </article>
+          <article class="step reveal">
+            <h3>Generate a title</h3>
+            <p>A diff summary and fair sample from every staged file are sent to Gemini with strict instructions: one line, Conventional Commit syntax, imperative language, and fewer than 70 characters.</p>
+          </article>
+          <article class="step reveal">
+            <h3>Generate a description</h3>
+            <p>Gemini receives the accepted title, changed files, and staged diff, then returns concise bullet points describing what changed and why.</p>
+          </article>
+          <article class="step reveal">
+            <h3>Commit automatically</h3>
+            <p>The default path displays the generated message and immediately executes <span class="inline-code">git commit -m</span> with both title and description. No application prompts interrupt the flow.</p>
+          </article>
+          <article class="step reveal">
+            <h3>Review when needed</h3>
+            <p>Run <span class="inline-code">commitgen --interactive</span> or <span class="inline-code">commitgen -i</span> to restore the complete accept, regenerate, edit, skip, and quit workflow. Optional notes end when you type <span class="inline-code">EOF</span> on its own line.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="architecture" id="architecture">
+      <div class="section-shell">
+        <div class="section-heading reveal">
+          <div><p class="eyebrow">Architecture</p></div>
+          <div>
+            <h2>Small surface. Clear boundaries.</h2>
+            <p>The Go port divides interaction, Git operations, prompt construction, editing, and remote generation into focused components. The standard library provides everything else.</p>
+          </div>
+        </div>
+
+        <div class="architecture-board reveal">
+          <article class="architecture-card">
+            <span class="tag">01 / entry</span>
+            <h3>Process lifecycle</h3>
+            <p>The command entry point wires streams, handles Ctrl+C, starts the application, and maps failures to a non-zero exit.</p>
+          </article>
+          <article class="architecture-card">
+            <span class="tag">02 / orchestration</span>
+            <h3>Interactive state</h3>
+            <p>The application coordinates the default automatic path plus interactive review, regeneration, editing, cancellation, and final commit.</p>
+          </article>
+          <article class="architecture-card">
+            <span class="tag">03 / local</span>
+            <h3>Git boundary</h3>
+            <p>Repository checks, staged diffs, changed filenames, and commit creation are isolated behind direct Git subprocess calls.</p>
+          </article>
+          <article class="architecture-card">
+            <span class="tag">04 / intelligence</span>
+            <h3>Prompt contract</h3>
+            <p>Editable title and description templates constrain format while preserving filenames and relevant diff context. Your versions are embedded when the binary is built.</p>
+          </article>
+          <article class="architecture-card">
+            <span class="tag">05 / network</span>
+            <h3>Gemini REST client</h3>
+            <p>A 60-second HTTP client sends JSON directly to the Gemini generateContent endpoint using the API-key header.</p>
+          </article>
+          <article class="architecture-card">
+            <span class="tag">06 / human</span>
+            <h3>Editor bridge</h3>
+            <p>Temporary files connect generated text to your editor. Comment lines are removed and the temporary file is deleted afterward.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="install" id="install">
+      <div class="section-shell">
+        <div class="section-heading reveal">
+          <div><p class="eyebrow">Installation</p></div>
+          <div>
+            <h2>Build it once. Run it without Go.</h2>
+            <p>The installer prefers a local Go 1.22+ toolchain. If Go is absent but Docker is available, it uses the official Go image and cross-compiles for your host OS and architecture.</p>
+          </div>
+        </div>
+
+        <div class="install-grid">
+          <div class="install-options reveal">
+            <div class="install-option"><strong>On the build machine</strong><span>Use Go 1.22+ or Docker, plus access to the source repository.</span></div>
+            <div class="install-option"><strong>On the target machine</strong><span>Use a matching binary, Git in PATH, and network access to Gemini. Go is not required.</span></div>
+            <div class="install-option"><strong>Supported targets</strong><span>Linux, macOS, and Windows on amd64 or arm64 through the installer’s Docker path.</span></div>
+            <div class="install-option"><strong>Release binaries</strong><span>Version tags publish five cross-compiled binaries and SHA-256 checksums through GitHub Actions.</span></div>
+            <div class="install-option"><strong>Install location</strong><span><code>$GOBIN</code> when set; otherwise <code>~/.local/bin</code>.</span></div>
+            <div class="install-option"><strong>Custom prompts</strong><span>Edit <code>prompts/title.txt</code> and <code>prompts/description.txt</code> before installation.</span></div>
+            <div class="install-option"><strong>Interactive mode</strong><span>Run <code>commitgen --interactive</code> or <code>commitgen -i</code> when you want to review before committing.</span></div>
+          </div>
+
+          <div class="code-stack reveal">
+            <pre class="code-block"><button class="copy-button" aria-label="Copy installation commands" data-copy>⧉</button><span class="code-comment"># Clone and install</span>
+git clone https://github.com/N0ViP/commitgen-project.git
+cd commitgen-project
+./install.sh</pre>
+            <pre class="code-block"><button class="copy-button" aria-label="Copy configuration commands" data-copy>⧉</button><span class="code-comment"># Configure your shell session</span>
+export GEMINI_API_KEY=<span class="code-value">"your-api-key"</span>
+export COMMITGEN_MODEL=<span class="code-value">"gemini-3.1-flash-lite"</span></pre>
+            <pre class="code-block"><button class="copy-button" aria-label="Copy usage commands" data-copy>⧉</button><span class="code-comment"># Stage exactly what belongs in the commit</span>
+git add path/to/changed-files
+commitgen</pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="details" id="details">
+      <div class="section-shell">
+        <div class="section-heading reveal">
+          <div><p class="eyebrow">Behavior &amp; configuration</p></div>
+          <div>
+            <h2>Predictable defaults, visible failure modes.</h2>
+            <p>The interface is intentionally narrow. Two environment variables control remote generation; every important local assumption is checked before the commit is created.</p>
+          </div>
+        </div>
+
+        <div class="detail-grid">
+          <article class="detail-panel reveal">
+            <h3>Environment</h3>
+            <p>Configuration stays outside the binary and repository.</p>
+            <dl class="definition-list">
+              <div class="definition-row"><dt>GEMINI_API_KEY</dt><dd>Required credential sent in the <code>x-goog-api-key</code> request header. CommitGen does not persist it.</dd></div>
+              <div class="definition-row"><dt>COMMITGEN_MODEL</dt><dd>Optional model override. Defaults to <code>gemini-3.1-flash-lite</code>.</dd></div>
+              <div class="definition-row"><dt>EDITOR</dt><dd>Optional editor command. Defaults to <code>nano</code> on Unix-like systems or <code>notepad</code> on Windows.</dd></div>
+              <div class="definition-row"><dt>GOBIN</dt><dd>Optional installation directory used by <code>install.sh</code>.</dd></div>
+            </dl>
+          </article>
+
+          <article class="detail-panel reveal">
+            <h3>Resilience</h3>
+            <p>Generation errors do not hide what happened.</p>
+            <dl class="definition-list">
+              <div class="definition-row"><dt>HTTP timeout</dt><dd>Gemini calls stop after 60 seconds instead of hanging indefinitely.</dd></div>
+              <div class="definition-row"><dt>Transient errors</dt><dd>Rate limits, timeouts, and server errors are retried three times with visible 1, 2, and 4 second backoff notices.</dd></div>
+              <div class="definition-row"><dt>Empty response</dt><dd>Aborts the operation without creating a commit instead of proposing placeholder content.</dd></div>
+              <div class="definition-row"><dt>Git failure</dt><dd>The commit error and Git output are surfaced; the application exits with status 1.</dd></div>
+            </dl>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="privacy" id="privacy">
+      <div class="privacy-copy reveal">
+        <p class="eyebrow">Privacy boundary</p>
+        <h2>Know what leaves your machine.</h2>
+        <p>CommitGen sends the staged filenames and up to 8,000 characters of the staged diff to Google Gemini. Your unstaged changes are not included by the Git commands used.</p>
+        <p>Review staged content before running the tool. Do not stage credentials, private keys, customer data, or proprietary material that you are not permitted to send to an external AI service.</p>
+      </div>
+      <div class="privacy-visual">
+        <div class="data-flow reveal" aria-label="CommitGen data flow">
+          <div class="data-node"><span class="node-icon">01</span><span><b>Your Git index</b><small>Staged diff + changed filenames</small></span></div>
+          <div class="flow-arrow">↓ local process</div>
+          <div class="data-node"><span class="node-icon">02</span><span><b>CommitGen</b><small>Adds diff stats and samples every staged file</small></span></div>
+          <div class="flow-arrow">↓ HTTPS request</div>
+          <div class="data-node"><span class="node-icon">03</span><span><b>Gemini API</b><small>Returns generated title or description text</small></span></div>
+          <div class="flow-arrow">↓ automatic mode or your approval</div>
+          <div class="data-node"><span class="node-icon">04</span><span><b>Local Git history</b><small>Commit is created only after acceptance</small></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="files" id="source">
+      <div class="section-shell">
+        <div class="section-heading reveal">
+          <div><p class="eyebrow">Source map</p></div>
+          <div>
+            <h2>Find your way around the repository.</h2>
+            <p>The command is kept in a conventional Go layout: a tiny public entry point, private application packages, focused unit tests, and a portable installer.</p>
+          </div>
+        </div>
+
+        <div class="file-tree reveal">
+          <ul class="tree-list" aria-label="Project file tree">
+            <li>commitgen-project/</li>
+            <li class="indent">cmd/commitgen/main.go</li>
+            <li class="indent">internal/commitgen/app.go</li>
+            <li class="indent">internal/commitgen/git.go</li>
+            <li class="indent">internal/commitgen/gemini.go</li>
+            <li class="indent">internal/commitgen/prompts.go</li>
+            <li class="indent">prompts/title.txt</li>
+            <li class="indent">prompts/description.txt</li>
+            <li class="indent">internal/commitgen/editor.go</li>
+            <li class="indent">internal/commitgen/*_test.go</li>
+            <li class="indent">go.mod</li>
+            <li class="indent">install.sh</li>
+            <li class="indent">README.md</li>
+          </ul>
+          <div class="file-notes">
+            <h3>Responsibilities</h3>
+            <div class="file-note"><code>main.go</code><span>Signal handling, process streams, and exit status.</span></div>
+            <div class="file-note"><code>app.go</code><span>The user journey and interactive decision loops.</span></div>
+            <div class="file-note"><code>git.go</code><span>Safe direct calls to the Git executable.</span></div>
+            <div class="file-note"><code>gemini.go</code><span>JSON request/response types and HTTP transport.</span></div>
+            <div class="file-note"><code>prompts.go</code><span>Injects file context, notes, title, and the bounded diff into external prompt templates.</span></div>
+            <div class="file-note"><code>prompts/*.txt</code><span>User-editable AI instructions embedded into the executable during installation.</span></div>
+            <div class="file-note"><code>editor.go</code><span>Temporary file lifecycle and editor invocation.</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="faq" id="faq">
+      <div class="section-shell">
+        <div class="section-heading reveal">
+          <div><p class="eyebrow">Common questions</p></div>
+          <div><h2>Before you run it.</h2></div>
+        </div>
+
+        <div class="reveal">
+          <details>
+            <summary>Does CommitGen ask before creating the commit?</summary>
+            <p>Not by default. Running <code>commitgen</code> generates the title and description and commits immediately. Run <code>commitgen --interactive</code> or <code>commitgen -i</code> when you want to review or edit the generated content first.</p>
+          </details>
+          <details>
+            <summary>Does the destination machine need Go or Docker?</summary>
+            <p>No. A compiled CommitGen binary is self-contained. The destination needs only a compatible operating system and CPU, Git in its PATH, network access, and a Gemini API key. Go or Docker is required only on the machine building from source.</p>
+          </details>
+          <details>
+            <summary>Can CommitGen commit unstaged changes?</summary>
+            <p>No. It reads Git’s cached diff, which represents the staging area, and the eventual <code>git commit</code> also commits staged content. This makes <code>git add</code> your explicit boundary.</p>
+          </details>
+          <details>
+            <summary>What happens when Gemini is unavailable?</summary>
+            <p>Retryable failures receive three attempts with backoff. If Gemini still fails—or returns no usable text—the entire operation stops with a non-zero exit and no commit is created.</p>
+          </details>
+          <details>
+            <summary>Why use Go for this project?</summary>
+            <p>Go produces compact, cross-platform executables and provides HTTP, JSON, subprocess, signal, and terminal primitives in its standard library. That removes Python interpreter and package-management requirements from end users.</p>
+          </details>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div>
+      <p class="eyebrow">Commit with intent</p>
+      <h2 class="footer-title">CommitGen.</h2>
+    </div>
+    <div class="footer-meta">
+      <p>Go CLI · Conventional Commits · Gemini</p>
+      <p><a href="https://github.com/N0ViP/commitgen-project">github.com/N0ViP/commitgen-project ↗</a></p>
+    </div>
+  </footer>
+
+  <script>
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const revealItems = document.querySelectorAll('.reveal');
+
+    if (reduceMotion || !('IntersectionObserver' in window)) {
+      revealItems.forEach((item) => item.classList.add('visible'));
+    } else {
+      const observer = new IntersectionObserver((entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            entry.target.classList.add('visible');
+            observer.unobserve(entry.target);
+          }
+        });
+      }, { threshold: 0.12 });
+      revealItems.forEach((item) => observer.observe(item));
+    }
+
+    document.querySelectorAll('[data-copy]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const block = button.closest('.code-block');
+        const text = Array.from(block.childNodes)
+          .filter((node) => node !== button)
+          .map((node) => node.textContent)
+          .join('')
+          .trim();
+        try {
+          await navigator.clipboard.writeText(text);
+          const previous = button.textContent;
+          button.textContent = '✓';
+          button.setAttribute('aria-label', 'Copied');
+          window.setTimeout(() => {
+            button.textContent = previous;
+            button.setAttribute('aria-label', 'Copy commands');
+          }, 1400);
+        } catch {
+          button.textContent = '!';
+        }
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+You are a senior software engineer generating a **Conventional Commit title** based on code changes.
+
+Guidelines:
+- Output ONLY ONE line — no explanations, no extra text.
+- Format: type(scope): summary
+- Use one of these types: feat, fix, refactor, style, docs, test, chore, perf, ci, build, revert.
+- The scope should be concise and relevant (e.g., a filename, folder, or feature).
+- The summary should describe what changed, using imperative mood ("add", "update", "fix", "remove").
+- Keep the entire title under 70 characters.
+- Do NOT include punctuation at the end, emojis, code snippets, backticks, or quotes around the output.
+
+Example output:
+feat(auth): add JWT token refresh on session expiry
+
+Context:
+- Changed files: {{FILES}}
+- Git diff:
+{{DIFF}}
+
+Return only the final commit title as plain text.

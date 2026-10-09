@@ -1,24 +1,51 @@
-![Example](example.png)
-
 # CommitGen
 
-CommitGen is a self-contained Go CLI that examines staged Git changes and uses
-Google Gemini to suggest a Conventional Commit title and optional description.
+CommitGen is a self-contained Go command-line tool that turns staged Git changes
+into a Conventional Commit using Google Gemini. By default it generates both a
+title and description, displays the result, and creates the commit without
+asking for input. An interactive mode is available when review is required.
 
 ## Features
 
-- Generates Conventional Commit titles (`feat`, `fix`, `chore`, and others).
-- Creates optional bullet-point descriptions.
-- Supports accepting, regenerating, or editing generated text.
-- Installs as one native executable with no runtime dependencies.
+- Generates Conventional Commit titles and concise bullet-point descriptions.
+- Commits automatically by default, with an optional interactive review mode.
+- Samples every staged file instead of sending only the beginning of a large diff.
+- Retries temporary Gemini failures with exponential backoff.
+- Aborts without committing when generation ultimately fails or returns empty text.
+- Keeps title and description prompts editable outside the Go source.
+- Builds as a single executable with no Go runtime required on destination machines.
+- Publishes cross-platform binaries and SHA-256 checksums from version tags.
 
 ## Requirements
 
-- Git
-- Go 1.22 or newer, or Docker (only needed to build from source)
-- A Gemini API key
+At runtime, CommitGen needs:
 
-## Install from source
+- Git available in `PATH`.
+- Network access to the Gemini API.
+- A `GEMINI_API_KEY` environment variable.
+
+Building from source additionally requires Go 1.22 or newer, or Docker. Users
+who download a release binary need neither Go nor Docker.
+
+## Installation
+
+### Release binary
+
+Download the appropriate executable and `checksums.txt` from
+[GitHub Releases](https://github.com/N0ViP/commitgen-project/releases).
+
+Available targets are:
+
+| Operating system | Architectures |
+| --- | --- |
+| Linux | amd64, arm64 |
+| macOS | amd64, arm64 |
+| Windows | amd64 |
+
+Verify the SHA-256 checksum, rename the executable to `commitgen`
+(`commitgen.exe` on Windows), and place it in a directory included in `PATH`.
+
+### Build from source
 
 ```sh
 git clone https://github.com/N0ViP/commitgen-project.git
@@ -26,56 +53,154 @@ cd commitgen-project
 ./install.sh
 ```
 
-The installer builds `commitgen` into `$GOBIN`, or `~/.local/bin` when `GOBIN`
-is unset. If Go is unavailable, it automatically builds with the official Go
-Docker image. Make sure the installation directory is included in your `PATH`.
+The installer uses a local Go toolchain when available. Otherwise, it builds
+through the official `golang:1.22-alpine` Docker image. The resulting executable
+is installed into `$GOBIN`, or `~/.local/bin` when `GOBIN` is unset.
 
-You can also build without installing:
+Build manually with:
 
 ```sh
-go build -o commitgen ./cmd/commitgen
+go build -trimpath -o commitgen ./cmd/commitgen
 ```
 
 ## Configuration
 
-Create a Gemini API key in [Google AI Studio](https://ai.google.dev/) and expose
-it to CommitGen:
+Create a key in [Google AI Studio](https://ai.google.dev/) and export it:
 
 ```sh
 export GEMINI_API_KEY="your_api_key_here"
 ```
 
-The model can be overridden when necessary:
+CommitGen uses the stable `gemini-3.1-flash-lite` model by default. Override it
+when needed:
 
 ```sh
 export COMMITGEN_MODEL="gemini-3.8-flash"
 ```
 
-To keep these values between sessions, add the exports to your shell profile,
-such as `~/.bashrc` or `~/.zshrc`.
+Add these exports to a shell profile such as `~/.bashrc` or `~/.zshrc` to keep
+them between sessions.
 
 ## Usage
 
-Stage changes and start CommitGen from anywhere inside the repository:
+Stage exactly the changes that belong in the commit, then run CommitGen:
 
 ```sh
-git add .
+git add path/to/changed-files
 commitgen
 ```
 
-Follow the prompts to accept, regenerate, edit, or skip generated content. The
-default editor is `nano` on Unix-like systems and `notepad` on Windows. Set
-`EDITOR` to override it.
+Automatic mode performs the following operations without application prompts:
 
-CommitGen sends the staged diff to the Gemini API. Do not stage secrets or other
-sensitive information you do not want sent to Google.
+1. Reads the staged filenames and diff summary.
+2. Builds a bounded sample containing context from every staged file.
+3. Generates a Conventional Commit title.
+4. Generates a description using that title and the staged context.
+5. Displays the completed message and executes `git commit`.
+
+### Interactive mode
+
+Use interactive mode to accept, regenerate, edit, skip, or cancel generated
+content before committing:
+
+```sh
+commitgen --interactive
+```
+
+The short form is:
+
+```sh
+commitgen -i
+```
+
+The editor defaults to `nano` on Unix-like systems and `notepad` on Windows.
+Set `EDITOR` to override it.
+
+When entering optional description notes, finish with `EOF` on its own line:
+
+```text
+Focus on the retry behavior.
+Mention that errors abort the commit.
+EOF
+```
+
+The delimiter leaves standard input open for the remaining interactive prompts.
+
+## Custom prompts
+
+Prompt templates are stored in:
+
+- `prompts/title.txt`
+- `prompts/description.txt`
+
+Edit them before running `./install.sh`. They are embedded into the executable
+at build time, so the installed program remains a single file. Rebuild after
+every prompt change.
+
+The following variables are replaced before each Gemini request:
+
+| Variable | Templates | Value |
+| --- | --- | --- |
+| `{{FILES}}` | Both | Comma-separated staged filenames |
+| `{{DIFF}}` | Both | Diff statistics and fairly sampled staged changes |
+| `{{TITLE}}` | Description | Generated or accepted commit title |
+| `{{NOTES}}` | Description | Interactive notes, or `None` |
+
+## Large commits
+
+Gemini receives at most 8,000 characters of diff context. CommitGen reserves
+space for `git diff --stat`, divides the remaining budget across every staged
+file, and reallocates unused space from small files to larger ones. Truncated
+file sections are marked explicitly.
+
+This approach prevents files near the end of a large commit from being silently
+excluded from the prompt.
+
+## Errors and retries
+
+CommitGen retries transient failures up to three times after the initial call,
+using delays of 1, 2, and 4 seconds. Retryable failures include:
+
+- HTTP 408 and 425 responses.
+- HTTP 429 rate limits.
+- HTTP 5xx server errors.
+- Network transport errors.
+
+Authentication and invalid-request errors are not retried. If all retries fail,
+or Gemini returns no usable title or description, CommitGen exits with status 1
+without invoking `git commit`.
+
+## Privacy
+
+CommitGen sends staged filenames, diff statistics, and sampled staged content to
+Google Gemini. Unstaged changes are not intentionally included. Review the Git
+staging area before running CommitGen, and do not stage credentials, private
+keys, customer information, or other material that must not leave your machine.
 
 ## Development
+
+Run the test suite and static analysis:
 
 ```sh
 go test ./...
 go vet ./...
 ```
+
+The project uses only Go's standard library. Tests cover prompt substitution,
+Gemini retries, heredoc-style input, response handling, and fair diff sampling.
+
+## Publishing a release
+
+Pushing a tag beginning with `v` runs the release workflow, tests the project,
+cross-compiles all supported binaries, generates `checksums.txt`, and creates a
+GitHub release:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The workflow is defined in `.github/workflows/release.yml`.
 
 ## Uninstall
 
@@ -85,5 +210,9 @@ Remove the installed executable:
 rm ~/.local/bin/commitgen
 ```
 
-If you set `GOBIN` during installation, remove `commitgen` from that directory
+If `GOBIN` was set during installation, remove `commitgen` from that directory
 instead.
+
+## License
+
+See [LICENSE.txt](LICENSE.txt).
