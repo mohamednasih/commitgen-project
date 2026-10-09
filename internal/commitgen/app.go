@@ -20,24 +20,27 @@ var errInputClosed = errors.New("input closed")
 var embeddedAPIKey string
 
 type App struct {
-	out   io.Writer
-	input *bufio.Reader
-	ai    *GeminiClient
+	out      io.Writer
+	input    *bufio.Reader
+	ai       *GeminiClient
+	progress *progressDisplay
 }
 
 func New(in io.Reader, out, errOut io.Writer) *App {
+	progress := newProgressDisplay(errOut)
 	client := NewGeminiClient(
 		configuredAPIKey(),
 		envOrDefault("COMMITGEN_MODEL", "gemini-3.1-flash-lite"),
 	)
 	client.OnRetry = func(failedAttempt, totalAttempts int, err error, nextDelay time.Duration) {
-		fmt.Fprintf(errOut, "\n[commitgen] AI request failed (attempt %d/%d): %v\n", failedAttempt, totalAttempts, err)
-		fmt.Fprintf(errOut, "[commitgen] Retrying in %s (%d retries remaining)...\n", nextDelay, totalAttempts-failedAttempt)
+		progress.logf("[commitgen] AI request failed (attempt %d/%d): %v\n[commitgen] Retrying in %s (%d retries remaining)...\n",
+			failedAttempt, totalAttempts, err, nextDelay, totalAttempts-failedAttempt)
 	}
 	return &App{
-		out:   out,
-		input: bufio.NewReader(in),
-		ai:    client,
+		out:      out,
+		input:    bufio.NewReader(in),
+		ai:       client,
+		progress: progress,
 	}
 }
 
@@ -65,10 +68,9 @@ func (a *App) Run(ctx context.Context, interactive bool) error {
 		return err
 	}
 	if !interactive {
-		return a.runAutomatic(ctx, diff, files)
+		return a.runDefault(ctx, diff, files)
 	}
 
-	fmt.Fprintln(a.out, "\nGenerating initial commit suggestion, please wait...")
 	title, err := a.generateTitle(ctx, diff, files)
 	if err != nil {
 		return fmt.Errorf("generate commit title: %w", err)
@@ -119,7 +121,7 @@ description:
 		if readErr != nil {
 			return fmt.Errorf("read description notes: %w", readErr)
 		}
-		fmt.Fprintln(a.out, "\nNotes captured. Please wait...")
+		fmt.Fprintln(a.out, "\nNotes captured.")
 
 		for {
 			description, err = a.generateDescription(ctx, diff, files, notes, title)
@@ -173,23 +175,66 @@ commit:
 	return nil
 }
 
-func (a *App) runAutomatic(ctx context.Context, diff string, files []string) error {
-	fmt.Fprintln(a.out, "\nGenerating commit title and description, please wait...")
-	title, err := a.generateTitle(ctx, diff, files)
-	if err != nil {
-		return fmt.Errorf("generate commit title: %w", err)
-	}
-	description, err := a.generateDescription(ctx, diff, files, "", title)
-	if err != nil {
-		return fmt.Errorf("generate commit description: %w", err)
-	}
+func (a *App) runDefault(ctx context.Context, diff string, files []string) error {
+generationLoop:
+	for {
+		title, err := a.generateTitle(ctx, diff, files)
+		if err != nil {
+			return fmt.Errorf("generate commit title: %w", err)
+		}
+		description, err := a.generateDescription(ctx, diff, files, "", title)
+		if err != nil {
+			return fmt.Errorf("generate commit description: %w", err)
+		}
 
-	fmt.Fprintf(a.out, "\n--- Generated Commit ---\n\n%s\n\n%s\n\n%s\n", title, description, strings.Repeat("-", outputWidth))
-	if err := gitCommit(ctx, title, description); err != nil {
-		return err
+		for {
+			fmt.Fprintf(a.out, "\n--- Generated Commit ---\n\n%s\n\n%s\n\n%s\n\n", title, description, strings.Repeat("-", outputWidth))
+			choice, askErr := a.ask("Commit? Yes (y), No (n), Regenerate (r), or Edit (e): ", "ynre")
+			if askErr != nil {
+				return a.finishOnInputError(askErr)
+			}
+			switch choice {
+			case 'y':
+				if err := gitCommit(ctx, title, description); err != nil {
+					return err
+				}
+				fmt.Fprintln(a.out, "\nCommit successful!")
+				return nil
+			case 'n':
+				return a.cancel("Commit cancelled by user.")
+			case 'r':
+				fmt.Fprintln(a.out, "\nRegenerating commit message...")
+				continue generationLoop
+			case 'e':
+				edited, editErr := openInEditor(
+					title+"\n\n"+description,
+					"# Edit the commit message below.\n# The first line is the title; remaining lines are the description.\n# Lines starting with # will be ignored.\n\n",
+				)
+				if editErr != nil {
+					return fmt.Errorf("edit commit message: %w", editErr)
+				}
+				editedTitle, editedDescription := splitCommitMessage(edited)
+				if editedTitle == "" {
+					fmt.Fprintln(a.out, "Empty title. Keeping previous commit message.")
+					continue
+				}
+				title, description = editedTitle, editedDescription
+			}
+		}
 	}
-	fmt.Fprintln(a.out, "\nCommit successful!")
-	return nil
+}
+
+func splitCommitMessage(message string) (string, string) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return "", ""
+	}
+	parts := strings.SplitN(message, "\n", 2)
+	title := strings.TrimSpace(parts[0])
+	if len(parts) == 1 {
+		return title, ""
+	}
+	return title, strings.TrimSpace(parts[1])
 }
 
 func (a *App) readNotes() (string, error) {
@@ -229,18 +274,24 @@ func (a *App) ask(prompt, allowed string) (byte, error) {
 	}
 }
 
-func (a *App) generateTitle(ctx context.Context, diff string, files []string) (string, error) {
+func (a *App) generateTitle(ctx context.Context, diff string, files []string) (title string, err error) {
+	task := a.startProgress("commit title")
+	defer func() { task.stop(err) }()
+
 	result, err := a.ai.Generate(ctx, titlePrompt(diff, files))
 	if err != nil {
 		return "", err
 	}
-	if title := cleanFirstLine(result); title != "" {
+	if title = cleanFirstLine(result); title != "" {
 		return title, nil
 	}
 	return "", errors.New("Gemini returned an empty commit title")
 }
 
-func (a *App) generateDescription(ctx context.Context, diff string, files []string, notes, title string) (string, error) {
+func (a *App) generateDescription(ctx context.Context, diff string, files []string, notes, title string) (description string, err error) {
+	task := a.startProgress("commit description")
+	defer func() { task.stop(err) }()
+
 	result, err := a.ai.Generate(ctx, descriptionPrompt(diff, files, notes, title))
 	if err != nil {
 		return "", err
@@ -250,6 +301,13 @@ func (a *App) generateDescription(ctx context.Context, diff string, files []stri
 		return "", errors.New("Gemini returned an empty commit description")
 	}
 	return result, nil
+}
+
+func (a *App) startProgress(label string) *progressTask {
+	if a.progress == nil {
+		a.progress = newProgressDisplay(io.Discard)
+	}
+	return a.progress.start(label)
 }
 
 func (a *App) cancel(message string) error {

@@ -2,6 +2,7 @@ package commitgen
 
 import (
 	"bytes"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,39 @@ func TestReadNotesRequiresDelimiter(t *testing.T) {
 	}
 }
 
+func TestConfirmationAcceptsAllChoices(t *testing.T) {
+	for _, test := range []struct {
+		input string
+		want  byte
+	}{
+		{input: "yes\n", want: 'y'},
+		{input: "no\n", want: 'n'},
+		{input: "regenerate\n", want: 'r'},
+		{input: "edit\n", want: 'e'},
+	} {
+		var output bytes.Buffer
+		app := New(strings.NewReader(test.input), &output, &output)
+
+		choice, err := app.ask("Commit? Yes (y), No (n), Regenerate (r), or Edit (e): ", "ynre")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if choice != test.want {
+			t.Errorf("input %q: choice = %q, want %q", test.input, choice, test.want)
+		}
+	}
+}
+
+func TestSplitCommitMessage(t *testing.T) {
+	title, description := splitCommitMessage("feat(cli): add confirmation\n\n- add edit option\n- keep review loop")
+	if title != "feat(cli): add confirmation" {
+		t.Errorf("title = %q", title)
+	}
+	if description != "- add edit option\n- keep review loop" {
+		t.Errorf("description = %q", description)
+	}
+}
+
 func TestDefaultModel(t *testing.T) {
 	t.Setenv("COMMITGEN_MODEL", "")
 	app := New(strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
@@ -59,5 +93,34 @@ func TestConfiguredAPIKeyPrefersEnvironment(t *testing.T) {
 	t.Cleanup(func() { embeddedAPIKey = previous })
 	if got := configuredAPIKey(); got != "runtime-key" {
 		t.Errorf("configuredAPIKey() = %q, want runtime-key", got)
+	}
+}
+
+func TestProgressDisplayUsesPlainTextForNonTerminalOutput(t *testing.T) {
+	var output bytes.Buffer
+	progress := newProgressDisplay(&output)
+	task := progress.start("commit title")
+	task.stop(nil)
+
+	got := output.String()
+	if !strings.Contains(got, "[commitgen] Generating commit title...") {
+		t.Errorf("progress output missing start message: %q", got)
+	}
+	if !strings.Contains(got, "[commitgen] Generated commit title") {
+		t.Errorf("progress output missing completion message: %q", got)
+	}
+	if strings.Contains(got, "\033[") {
+		t.Errorf("non-terminal progress output contains an ANSI escape: %q", got)
+	}
+}
+
+func TestProgressDisplayReportsFailure(t *testing.T) {
+	var output bytes.Buffer
+	progress := newProgressDisplay(&output)
+	task := progress.start("commit description")
+	task.stop(errors.New("request failed"))
+
+	if got := output.String(); !strings.Contains(got, "[commitgen] Failed to generate commit description") {
+		t.Errorf("progress output missing failure message: %q", got)
 	}
 }

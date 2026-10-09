@@ -2,14 +2,15 @@
 
 CommitGen is a self-contained Go command-line tool that turns staged Git changes
 into a Conventional Commit using Google Gemini. By default it generates both a
-title and description, displays the result, and creates the commit without
-asking for input. An interactive mode is available when review is required.
+title and description, displays the result, and asks for confirmation before
+committing. An interactive mode is available for detailed review and editing.
 
 ## Features
 
 - Generates Conventional Commit titles and concise bullet-point descriptions.
-- Commits automatically by default, with an optional interactive review mode.
+- Confirms before committing, with options to cancel, regenerate, or edit the message.
 - Samples every staged file instead of sending only the beginning of a large diff.
+- Shows live generation progress and elapsed time while waiting for Gemini.
 - Retries temporary Gemini failures with exponential backoff.
 - Aborts without committing when generation ultimately fails or returns empty text.
 - Keeps title and description prompts editable outside the Go source.
@@ -111,13 +112,18 @@ git add path/to/changed-files
 commitgen
 ```
 
-Automatic mode performs the following operations without application prompts:
+Default mode performs the following operations:
 
 1. Reads the staged filenames and diff summary.
 2. Builds a bounded sample containing context from every staged file.
 3. Generates a Conventional Commit title.
 4. Generates a description using that title and the staged context.
-5. Displays the completed message and executes `git commit`.
+5. Displays the completed message and asks whether to commit, cancel, regenerate, or edit.
+6. Executes `git commit` only after confirmation.
+
+At the confirmation prompt, enter `y` to commit, `n` to cancel, `r` to
+regenerate both the title and description, or `e` to edit the complete message
+before returning to the confirmation prompt.
 
 ### Interactive mode
 

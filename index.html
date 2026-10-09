@@ -556,7 +556,7 @@
         <div>
           <p class="eyebrow">AI-assisted commits, under your control</p>
           <h1>Stage code.<br><span class="hero-highlight">Say it better.</span></h1>
-          <p class="hero-copy">CommitGen reads the changes you already staged, asks Gemini for a precise title and description, then commits automatically. Add <code>--interactive</code> whenever you want full review control.</p>
+          <p class="hero-copy">CommitGen reads the changes you already staged, asks Gemini for a precise title and description, then waits for your confirmation. Add <code>--interactive</code> whenever you want full editing control.</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#install">Install CommitGen <span class="button-arrow">↓</span></a>
             <a class="button button-secondary" href="#workflow">Explore the workflow</a>
@@ -591,7 +591,7 @@
       <div class="stat"><strong>1 binary</strong><span>No language runtime on target machines</span></div>
       <div class="stat"><strong>0 packages</strong><span>Go standard library only</span></div>
       <div class="stat"><strong>8,000</strong><span>Characters shared fairly across staged files</span></div>
-      <div class="stat"><strong>2 modes</strong><span>Automatic by default, interactive on demand</span></div>
+      <div class="stat"><strong>2 modes</strong><span>Quick confirmation or full interactive review</span></div>
     </div>
 
     <section class="workflow" id="workflow">
@@ -600,7 +600,7 @@
           <div><p class="eyebrow">From diff to history</p></div>
           <div>
             <h2>A deliberate six-step workflow.</h2>
-            <p>CommitGen uses Git’s staging area as the source of truth, generates both parts of the message, and commits without pausing. Interactive mode adds the full review loop when you need it.</p>
+            <p>CommitGen uses Git’s staging area as the source of truth, generates both parts of the message, and asks before committing. Interactive mode adds the full editing loop when you need it.</p>
           </div>
         </div>
 
@@ -622,8 +622,8 @@
             <p>Gemini receives the accepted title, changed files, and staged diff, then returns concise bullet points describing what changed and why.</p>
           </article>
           <article class="step reveal">
-            <h3>Commit automatically</h3>
-            <p>The default path displays the generated message and immediately executes <span class="inline-code">git commit -m</span> with both title and description. No application prompts interrupt the flow.</p>
+            <h3>Confirm the commit</h3>
+            <p>The default path displays the generated message and asks you to commit, cancel, regenerate, or edit it. <span class="inline-code">git commit -m</span> runs only after you answer yes.</p>
           </article>
           <article class="step reveal">
             <h3>Review when needed</h3>
@@ -652,7 +652,7 @@
           <article class="architecture-card">
             <span class="tag">02 / orchestration</span>
             <h3>Interactive state</h3>
-            <p>The application coordinates the default automatic path plus interactive review, regeneration, editing, cancellation, and final commit.</p>
+            <p>The application coordinates default confirmation plus interactive review, regeneration, editing, cancellation, and final commit.</p>
           </article>
           <article class="architecture-card">
             <span class="tag">03 / local</span>
@@ -696,7 +696,7 @@
             <div class="install-option"><strong>Release binaries</strong><span>Version tags publish five cross-compiled binaries and SHA-256 checksums through GitHub Actions.</span></div>
             <div class="install-option"><strong>Install location</strong><span><code>$GOBIN</code> when set; otherwise <code>~/.local/bin</code>.</span></div>
             <div class="install-option"><strong>Custom prompts</strong><span>Edit <code>prompts/title.txt</code> and <code>prompts/description.txt</code> before installation.</span></div>
-            <div class="install-option"><strong>Interactive mode</strong><span>Run <code>commitgen --interactive</code> or <code>commitgen -i</code> when you want to review before committing.</span></div>
+            <div class="install-option"><strong>Interactive mode</strong><span>Run <code>commitgen --interactive</code> or <code>commitgen -i</code> for separate title and description controls.</span></div>
             <div class="install-option"><strong>Embedded key (unsafe)</strong><span><code>./install.sh --embed-key</code> can link in the current key for a private binary, but the credential remains extractable.</span></div>
           </div>
 
@@ -766,7 +766,7 @@ commitgen</pre>
           <div class="data-node"><span class="node-icon">02</span><span><b>CommitGen</b><small>Adds diff stats and samples every staged file</small></span></div>
           <div class="flow-arrow">↓ HTTPS request</div>
           <div class="data-node"><span class="node-icon">03</span><span><b>Gemini API</b><small>Returns generated title or description text</small></span></div>
-          <div class="flow-arrow">↓ automatic mode or your approval</div>
+          <div class="flow-arrow">↓ after your approval</div>
           <div class="data-node"><span class="node-icon">04</span><span><b>Local Git history</b><small>Commit is created only after acceptance</small></span></div>
         </div>
       </div>
@@ -822,7 +822,7 @@ commitgen</pre>
         <div class="reveal">
           <details>
             <summary>Does CommitGen ask before creating the commit?</summary>
-            <p>Not by default. Running <code>commitgen</code> generates the title and description and commits immediately. Run <code>commitgen --interactive</code> or <code>commitgen -i</code> when you want to review or edit the generated content first.</p>
+            <p>Yes. Running <code>commitgen</code> generates and displays the title and description, then asks you to commit (<code>y</code>), cancel (<code>n</code>), regenerate both (<code>r</code>), or edit the complete message (<code>e</code>). Use <code>--interactive</code> or <code>-i</code> for separate title and description controls.</p>
           </details>
           <details>
             <summary>Does the destination machine need Go or Docker?</summary>
