@@ -81,6 +81,27 @@ export COMMITGEN_MODEL="gemini-3.8-flash"
 Add these exports to a shell profile such as `~/.bashrc` or `~/.zshrc` to keep
 them between sessions.
 
+### Embedding the API key
+
+Environment-based configuration is strongly recommended. An API key embedded in
+an executable is not secret: anyone who receives the binary can extract and use
+it, and rotating the key requires rebuilding every copy.
+
+If a private, single-user binary still needs a built-in key, use the explicit
+installer option with a newly created key:
+
+```sh
+export GEMINI_API_KEY="your_new_api_key"
+./install.sh --embed-key
+```
+
+The installer prints a security warning and embeds the key at link time. The
+executable then works when `GEMINI_API_KEY` is unset. Setting the environment
+variable at runtime overrides the embedded key, allowing emergency rotation.
+
+Never publish, upload, or distribute an executable containing an embedded key.
+Official release binaries never contain a key.
+
 ## Usage
 
 Stage exactly the changes that belong in the commit, then run CommitGen:

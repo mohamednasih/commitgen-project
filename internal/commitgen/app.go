@@ -15,6 +15,10 @@ const outputWidth = 60
 
 var errInputClosed = errors.New("input closed")
 
+// embeddedAPIKey can be populated at build time with go build -ldflags -X.
+// A runtime environment variable always takes precedence.
+var embeddedAPIKey string
+
 type App struct {
 	out   io.Writer
 	input *bufio.Reader
@@ -23,7 +27,7 @@ type App struct {
 
 func New(in io.Reader, out, errOut io.Writer) *App {
 	client := NewGeminiClient(
-		os.Getenv("GEMINI_API_KEY"),
+		configuredAPIKey(),
 		envOrDefault("COMMITGEN_MODEL", "gemini-3.1-flash-lite"),
 	)
 	client.OnRetry = func(failedAttempt, totalAttempts int, err error, nextDelay time.Duration) {
@@ -35,6 +39,13 @@ func New(in io.Reader, out, errOut io.Writer) *App {
 		input: bufio.NewReader(in),
 		ai:    client,
 	}
+}
+
+func configuredAPIKey() string {
+	if value := os.Getenv("GEMINI_API_KEY"); value != "" {
+		return value
+	}
+	return embeddedAPIKey
 }
 
 func (a *App) Run(ctx context.Context, interactive bool) error {

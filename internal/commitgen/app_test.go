@@ -41,3 +41,23 @@ func TestDefaultModel(t *testing.T) {
 		t.Errorf("default model = %q, want gemini-3.1-flash-lite", app.ai.Model)
 	}
 }
+
+func TestConfiguredAPIKeyUsesEmbeddedFallback(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "")
+	previous := embeddedAPIKey
+	embeddedAPIKey = "embedded-key"
+	t.Cleanup(func() { embeddedAPIKey = previous })
+	if got := configuredAPIKey(); got != "embedded-key" {
+		t.Errorf("configuredAPIKey() = %q, want embedded-key", got)
+	}
+}
+
+func TestConfiguredAPIKeyPrefersEnvironment(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "runtime-key")
+	previous := embeddedAPIKey
+	embeddedAPIKey = "embedded-key"
+	t.Cleanup(func() { embeddedAPIKey = previous })
+	if got := configuredAPIKey(); got != "runtime-key" {
+		t.Errorf("configuredAPIKey() = %q, want runtime-key", got)
+	}
+}
